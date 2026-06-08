@@ -12,10 +12,14 @@ dotenv.config();
 // Connect to Database
 connectDB();
 
-// Ensure uploads folder exists
+// Ensure uploads folder exists (safely wrapped in try-catch for serverless platforms)
 const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir);
+  }
+} catch (err) {
+  console.warn('Note: Uploads folder creation skipped or read-only filesystem:', err.message);
 }
 
 const app = express();
