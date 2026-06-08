@@ -10,7 +10,9 @@ const apiRoutes = require('./routes/api');
 dotenv.config();
 
 // Connect to Database
-connectDB();
+connectDB().catch(err => {
+  console.warn(`Initial MongoDB connection failed (${err.message}). Server will run in offline/fallback mode.`);
+});
 
 // Ensure uploads folder exists (safely wrapped in try-catch for serverless platforms)
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -39,6 +41,23 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Basic Health Check Route
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Portfolio API is running smoothly.' });
+});
+
+// Database connection middleware to ensure connection on all API requests
+app.use('/api', async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    // Let resume status/download bypass connection failures to use offline disk-based fallbacks
+    if (req.originalUrl === '/api/resume/download' || req.originalUrl === '/api/resume/status') {
+      return next();
+    }
+    res.status(500).json({
+      success: false,
+      message: `Database offline: ${err.message}`
+    });
+  }
 });
 
 // API Routes

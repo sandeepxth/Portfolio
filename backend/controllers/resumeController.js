@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Stats = require('../models/Stats');
 const Resume = require('../models/Resume');
+const connectDB = require('../config/db');
 
 const DEFAULT_RESUME_PATH = path.join(__dirname, '..', 'uploads', 'default_resume.pdf');
 
@@ -10,6 +11,7 @@ const DEFAULT_RESUME_PATH = path.join(__dirname, '..', 'uploads', 'default_resum
 // @access  Public
 exports.getResumeStatus = async (req, res) => {
   try {
+    await connectDB();
     const resume = await Resume.findOne({ filename: 'resume.pdf' });
     const exists = !!resume;
     res.status(200).json({
@@ -18,7 +20,14 @@ exports.getResumeStatus = async (req, res) => {
       filename: exists ? 'resume.pdf' : null
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Error checking resume status' });
+    console.error('Error checking resume status:', error);
+    // FALLBACK: If DB connection failed, report that custom resume does not exist (so it uses default)
+    res.status(200).json({
+      success: true,
+      exists: false,
+      filename: null,
+      isOffline: true
+    });
   }
 };
 
@@ -27,6 +36,17 @@ exports.getResumeStatus = async (req, res) => {
 // @access  Public
 exports.downloadResume = async (req, res) => {
   try {
+    try {
+      await connectDB();
+    } catch (dbErr) {
+      console.warn('Database offline/connection failed, using fallback resume file:', dbErr.message);
+      // Immediately serve fallback resume without trying database queries
+      if (fs.existsSync(DEFAULT_RESUME_PATH)) {
+        return res.download(DEFAULT_RESUME_PATH, 'Sandeep_Prajapati_Resume.pdf');
+      }
+      return res.status(404).json({ success: false, message: 'Fallback resume file not found' });
+    }
+
     const customResume = await Resume.findOne({ filename: 'resume.pdf' });
     
     // Increment resume download count in MongoDB
@@ -53,6 +73,11 @@ exports.downloadResume = async (req, res) => {
     }
   } catch (error) {
     console.error('Error downloading resume:', error);
+    // Final fallback in case of query errors (e.g. database disconnect during execution)
+    if (fs.existsSync(DEFAULT_RESUME_PATH)) {
+      console.log('Final fallback: serving default resume after query execution error.');
+      return res.download(DEFAULT_RESUME_PATH, 'Sandeep_Prajapati_Resume.pdf');
+    }
     res.status(500).json({ success: false, message: 'Error downloading resume' });
   }
 };
@@ -62,6 +87,7 @@ exports.downloadResume = async (req, res) => {
 // @access  Private (Admin only)
 exports.uploadResume = async (req, res) => {
   try {
+    await connectDB();
     const { fileData } = req.body;
 
     if (!fileData) {
@@ -97,6 +123,7 @@ exports.uploadResume = async (req, res) => {
 // @access  Private (Admin only)
 exports.deleteResume = async (req, res) => {
   try {
+    await connectDB();
     const result = await Resume.deleteOne({ filename: 'resume.pdf' });
     
     if (result.deletedCount > 0) {
@@ -118,6 +145,7 @@ exports.deleteResume = async (req, res) => {
 // @access  Private (Admin only)
 exports.getResumeStats = async (req, res) => {
   try {
+    await connectDB();
     const stat = await Stats.findOne({ key: 'resume_downloads' });
     res.status(200).json({
       success: true,
